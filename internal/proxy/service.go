@@ -77,6 +77,8 @@ func TransformResponsesPayload(payload map[string]any) (map[string]any, bool) {
 	requestedStream, _ := body["stream"].(bool)
 	_, droppedPromptCacheRetention := body["prompt_cache_retention"]
 	delete(body, "prompt_cache_retention")
+	_, droppedSafetyIdentifier := body["safety_identifier"]
+	delete(body, "safety_identifier")
 	body["store"] = false
 	body["stream"] = true
 	if _, exists := body["instructions"]; !exists {
@@ -85,11 +87,12 @@ func TransformResponsesPayload(payload map[string]any) (map[string]any, bool) {
 	model, _ := body["model"].(string)
 	_, hasInstructions := payload["instructions"]
 	log.Printf(
-		"proxy: transformed responses payload model=%s requested_stream=%t forced_stream=true instructions_auto=%t prompt_cache_retention_dropped=%t input_items=%d tools=%d keys=%v",
+		"proxy: transformed responses payload model=%s requested_stream=%t forced_stream=true instructions_auto=%t prompt_cache_retention_dropped=%t safety_identifier_dropped=%t input_items=%d tools=%d keys=%v",
 		model,
 		requestedStream,
 		!hasInstructions,
 		droppedPromptCacheRetention,
+		droppedSafetyIdentifier,
 		arrayLen(body["input"]),
 		arrayLen(body["tools"]),
 		mapKeys(body),
