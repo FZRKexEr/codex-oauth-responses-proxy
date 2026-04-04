@@ -1,6 +1,10 @@
 # codex-oauth-responses-proxy
 
-一个基于 ChatGPT OAuth 的本地 Go 代理，对外暴露 OpenAI 风格的 `POST /v1/responses` 和 `GET /v1/models`。
+一个基于 ChatGPT OAuth 的本地 Go 代理，对外暴露 OpenAI 风格的：
+
+- `POST /v1/responses`
+- `POST /v1/chat/completions`
+- `GET /v1/models`
 
 GitHub 仓库：
 
@@ -14,13 +18,13 @@ GitHub 仓库：
 
 ## 项目目标
 
-这个项目只做一件事：
+这个项目现在主要提供两层接口：
 
-- 提供可供 agent / chatbot / coding tool 使用的原生 `/v1/responses`
+- 原生 `/v1/responses`
+- 面向旧 SDK / 旧 agent / 旧客户端 的 `/v1/chat/completions` 兼容层
 
 明确不做：
 
-- `/v1/chat/completions`
 - 多租户网关
 - 官方 Platform API 的替代品
 
@@ -45,6 +49,12 @@ GitHub 仓库：
 
 除了这些已经被真实上游证明必要的适配，其他字段尽量透传。
 
+另外项目现在也提供 `/v1/chat/completions` 兼容层：
+
+- 把 chat completions 请求转换成 responses 请求
+- 复用现有 `/v1/responses` 适配逻辑
+- 再把结果转换回 `chat.completion` / `chat.completion.chunk`
+
 ## 当前结构
 
 代码已经按职责拆开：
@@ -55,6 +65,7 @@ GitHub 仓库：
 - OAuth 登录/刷新： [service.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/auth/service.go)
 - 上游请求适配： [service.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/proxy/service.go)
 - HTTP 接口： [handler.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/httpapi/handler.go)
+- chat completions 兼容层： [chat_completions.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/httpapi/chat_completions.go)
 
 ## 依赖
 
@@ -180,6 +191,10 @@ OAuth 浏览器回调地址。
 
 对外暴露标准风格 `Responses API` 入口。
 
+### `POST /v1/chat/completions`
+
+对外暴露兼容 OpenAI `chat.completions` 的入口，内部会转换到 `/v1/responses` 再转回 chat completions 响应格式。
+
 ## 使用示例
 
 ### 非流式文本
@@ -252,6 +267,34 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
   }' | jq .
 ```
 
+### Chat completions 非流式
+
+```bash
+curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "gpt-5.3-codex",
+    "messages": [
+      {"role": "system", "content": "Reply briefly."},
+      {"role": "user", "content": "Reply with exactly: CHAT_OK"}
+    ]
+  }' | jq .
+```
+
+### Chat completions 流式
+
+```bash
+curl --noproxy '*' -sN http://127.0.0.1:1455/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "gpt-5.3-codex",
+    "stream": true,
+    "messages": [
+      {"role": "user", "content": "Reply with exactly: CHAT_STREAM_OK"}
+    ]
+  }'
+```
+
 ### Reasoning
 
 ```bash
@@ -318,6 +361,24 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 - `reasoning`
 - `text.format: json_schema`
 
+## 当前 chat completions 兼容层能力
+
+下面这些能力是当前项目内置的 `/v1/chat/completions` 兼容范围：
+
+- `messages` 角色：`system`、`developer`、`user`、`assistant`、`tool`
+- `tools`
+- `tool_choice`
+- assistant `tool_calls`
+- tool message 回注
+- 非流式 `chat.completion`
+- 流式 `chat.completion.chunk`
+- `response_format.type=json_schema`
+- `max_tokens` / `max_completion_tokens`
+
+这层兼容主要是为了让只支持 chat completions 的客户端和 coding agent 更容易接入。
+
+如果客户端本身已经支持 `Responses API`，仍然建议优先直接走 `/v1/responses`。
+
 ## 已确认的上游行为差异
 
 这些不是猜测，是已经测出来的结果：
@@ -378,6 +439,7 @@ Unsupported parameter: safety_identifier
 - 还没有做图片输入和更复杂的多模态事件重写
 - 还没有做自动化测试，只整理了真实手工回归清单
 - 还没有做详细的请求日志、监控和压测
+- chat completions 的流式输出目前是根据最终 responses 结果重组出来的 chunk，不是逐 token 原样转发
 
 ## 最小真实回归测试清单
 
@@ -584,6 +646,25 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 - `safety_identifier`
 
 而通过本项目转发时，这两个字段会被自动过滤，不需要调用方自己处理。
+
+### 10. Chat completions 兼容检查
+
+```bash
+curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "gpt-5.3-codex",
+    "messages": [
+      {"role": "system", "content": "Reply briefly."},
+      {"role": "user", "content": "Reply with exactly: CHAT_OK"}
+    ]
+  }' | jq '{object, model, text: .choices[0].message.content}'
+```
+
+预期：
+
+- `object=chat.completion`
+- `choices[0].message.content=CHAT_OK`
 
 ## 环境变量
 

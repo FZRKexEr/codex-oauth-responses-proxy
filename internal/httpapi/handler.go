@@ -32,6 +32,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/auth/exchange", h.handleAuthExchange)
 	mux.HandleFunc("/auth/callback", h.handleAuthCallback)
 	mux.HandleFunc("/v1/models", h.handleModels)
+	mux.HandleFunc("/v1/chat/completions", h.handleChatCompletions)
 	mux.HandleFunc("/v1/responses", h.handleResponses)
 	return mux
 }
