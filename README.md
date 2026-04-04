@@ -1,6 +1,10 @@
-# OAuth Responses Proxy
+# codex-oauth-responses-proxy
 
 一个基于 ChatGPT OAuth 的本地 Go 代理，对外暴露 OpenAI 风格的 `POST /v1/responses` 和 `GET /v1/models`。
+
+GitHub 仓库：
+
+- [FZRKexEr/codex-oauth-responses-proxy](https://github.com/FZRKexEr/codex-oauth-responses-proxy)
 
 它的目标不是实现一套新的聊天协议，而是把这条真实上游：
 
@@ -27,12 +31,16 @@
 - 缺少 `instructions` 时会失败
 - 非流式请求直接打上游会失败，上游要求 `stream=true`
 - `previous_response_id` 当前不支持
+- `prompt_cache_retention` 当前不支持
+- `safety_identifier` 当前不支持
 
 所以这个代理做的是“最小必要适配”：
 
 - 强制 `store: false`
 - 缺少 `instructions` 时自动补空字符串 `""`
 - 对非流式请求，内部转成上游流式，再把 SSE 收口成最终 JSON
+- 转发前过滤已确认不兼容的 `prompt_cache_retention`
+- 转发前过滤已确认不兼容的 `safety_identifier`
 - 对流式请求，原样 SSE passthrough
 
 除了这些已经被真实上游证明必要的适配，其他字段尽量透传。
@@ -343,6 +351,26 @@ Stream must be set to true
 Unsupported parameter: previous_response_id
 ```
 
+4. `prompt_cache_retention`
+
+- 当前会返回：
+
+```text
+Unsupported parameter: prompt_cache_retention
+```
+
+- 所以代理会在转发前移除这个字段
+
+5. `safety_identifier`
+
+- 当前会返回：
+
+```text
+Unsupported parameter: safety_identifier
+```
+
+- 所以代理会在转发前移除这个字段
+
 ## 当前边界
 
 - 主要面向单用户、本地代理场景
@@ -549,6 +577,13 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 预期：
 
 - 返回 `Unsupported parameter: previous_response_id`
+
+如果是直接调用真实上游而不是通过这个代理，下面两个字段目前也会报错：
+
+- `prompt_cache_retention`
+- `safety_identifier`
+
+而通过本项目转发时，这两个字段会被自动过滤，不需要调用方自己处理。
 
 ## 环境变量
 
