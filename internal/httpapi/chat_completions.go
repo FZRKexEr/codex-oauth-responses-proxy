@@ -163,6 +163,17 @@ func translateChatCompletionsRequest(payload map[string]any) (map[string]any, er
 	if instructions := strings.TrimSpace(strings.Join(instructionsParts, "\n\n")); instructions != "" {
 		out["instructions"] = instructions
 	}
+	if reasoning, ok := cloneChatObject(payload["reasoning"]); ok && len(reasoning) > 0 {
+		out["reasoning"] = reasoning
+	}
+	if effort, ok := payload["reasoning_effort"].(string); ok && strings.TrimSpace(effort) != "" {
+		reasoning, _ := cloneChatObject(out["reasoning"])
+		if reasoning == nil {
+			reasoning = make(map[string]any)
+		}
+		reasoning["effort"] = strings.TrimSpace(effort)
+		out["reasoning"] = reasoning
+	}
 	if tools, ok := payload["tools"].([]any); ok && len(tools) > 0 {
 		translatedTools, err := translateChatTools(tools)
 		if err != nil {
@@ -339,6 +350,18 @@ func translateToolChoice(value any) any {
 		}
 	}
 	return value
+}
+
+func cloneChatObject(value any) (map[string]any, bool) {
+	src, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]any, len(src))
+	for key, item := range src {
+		out[key] = item
+	}
+	return out, true
 }
 
 func translateResponseFormat(value map[string]any) map[string]any {

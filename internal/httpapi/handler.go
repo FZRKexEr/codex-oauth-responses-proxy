@@ -220,12 +220,17 @@ func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
 		if slug == "" {
 			continue
 		}
-		data = append(data, map[string]any{
-			"id":       slug,
-			"object":   "model",
-			"created":  0,
-			"owned_by": "chatgpt-oauth",
-		})
+		entry := make(map[string]any, len(model)+2)
+		for key, value := range model {
+			entry[key] = value
+		}
+		entry["id"] = slug
+		entry["object"] = "model"
+		if _, exists := entry["created"]; !exists {
+			entry["created"] = 0
+		}
+		delete(entry, "slug")
+		data = append(data, entry)
 	}
 	log.Printf("http: models returned count=%d", len(data))
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})

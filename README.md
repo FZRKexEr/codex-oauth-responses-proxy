@@ -231,6 +231,13 @@ OAuth 浏览器回调地址。
 
 从真实上游 `backend-api/codex/models` 拉取模型列表，并转成 `model list` 风格响应。
 
+兼容策略：
+
+- 保留上游模型对象里已有字段
+- 补标准风格的 `id` / `object`
+- 如果上游没有 `created`，默认补 `0`
+- 不再硬编码自定义 `owned_by`
+
 ### `POST /v1/responses`
 
 对外暴露标准风格 `Responses API` 入口。
@@ -425,6 +432,8 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 - 流式 `chat.completion.chunk`
 - `response_format.type=json_schema`
 - `max_tokens` / `max_completion_tokens`
+- `reasoning_effort -> reasoning.effort`
+- 透传 `reasoning`
 
 这层兼容主要是为了让只支持 chat completions 的客户端和 coding agent 更容易接入。
 
@@ -725,6 +734,26 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
 
 - `object=chat.completion`
 - `choices[0].message.content=CHAT_OK`
+
+### 11. Chat completions 推理强度
+
+```bash
+curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
+  -H 'authorization: Bearer your-secret-key' \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "gpt-5.3-codex",
+    "reasoning_effort": "high",
+    "messages": [
+      {"role": "user", "content": "Reply with exactly: CHAT_REASONING_OK"}
+    ]
+  }' | jq '{model, usage, text: .choices[0].message.content}'
+```
+
+兼容策略：
+
+- `chat.completions` 的 `reasoning_effort` 会映射到 `responses` 的 `reasoning.effort`
+- 如果请求里已经直接带了 `reasoning` 对象，也会继续透传
 
 ## 环境变量
 
