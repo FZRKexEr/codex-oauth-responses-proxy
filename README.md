@@ -114,6 +114,50 @@ bin/oauth-responses-proxy
 http://127.0.0.1:1455
 ```
 
+如果你准备把它部署到服务器上，建议同时设置一个服务端 API key：
+
+```bash
+PROXY_API_KEY=your-secret-key
+```
+
+设置后，这些接口会要求客户端携带：
+
+```http
+Authorization: Bearer your-secret-key
+```
+
+受保护接口：
+
+- `/v1/models`
+- `/v1/responses`
+- `/v1/chat/completions`
+
+OAuth 登录相关接口仍然不需要这个 key：
+
+- `/health`
+- `/auth/login`
+- `/auth/exchange`
+- `/auth/callback`
+
+## 服务器最小部署配置
+
+如果你只是想把它部署成一个“给自己或自己的 coding agent 使用”的私有服务，最小建议配置就是：
+
+```bash
+export PROXY_API_KEY="your-secret-key"
+export OPENAI_OAUTH_TOKEN_FILE="/opt/codex-oauth-responses-proxy/.oauth_tokens.json"
+./bin/oauth-responses-proxy
+```
+
+其中：
+
+- `PROXY_API_KEY` 用来验证客户端是否可以调用你的代理
+- `OPENAI_OAUTH_TOKEN_FILE` 用来指定 ChatGPT OAuth token 的落盘位置
+
+其他环境变量大多数都可以先使用默认值。
+
+第一次部署后，你仍然需要完成一次 OAuth 登录流程，生成 `.oauth_tokens.json`，之后代理才能代表你的 ChatGPT 账户访问上游。
+
 ## 登录
 
 ### 方式一：浏览器登录
@@ -201,6 +245,7 @@ OAuth 浏览器回调地址。
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -219,6 +264,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -sN http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -238,6 +284,7 @@ curl --noproxy '*' -sN http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -271,6 +318,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -285,6 +333,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
 
 ```bash
 curl --noproxy '*' -sN http://127.0.0.1:1455/v1/chat/completions \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -299,6 +348,7 @@ curl --noproxy '*' -sN http://127.0.0.1:1455/v1/chat/completions \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -318,6 +368,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -455,11 +506,13 @@ curl --noproxy '*' -s http://127.0.0.1:1455/health | jq .
 
 - 服务可访问
 - 已登录时 `authenticated=true`
+- 如果配置了 `PROXY_API_KEY`，则 `api_key_required=true`
 
 ### 2. 模型列表
 
 ```bash
-curl --noproxy '*' -s http://127.0.0.1:1455/v1/models | jq '.data | map(.id)[:10]'
+curl --noproxy '*' -s http://127.0.0.1:1455/v1/models \
+  -H 'authorization: Bearer your-secret-key' | jq '.data | map(.id)[:10]'
 ```
 
 预期：
@@ -470,6 +523,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/models | jq '.data | map(.id)[:10
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -493,6 +547,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -sN http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -517,6 +572,7 @@ curl --noproxy '*' -sN http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -558,6 +614,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -582,6 +639,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -621,6 +679,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -651,6 +710,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
+  -H 'authorization: Bearer your-secret-key' \
   -H 'content-type: application/json' \
   -d '{
     "model": "gpt-5.3-codex",
@@ -678,6 +738,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
 - `OPENAI_OAUTH_BETA`
 - `OPENAI_BACKEND_BASE`
 - `OPENAI_OAUTH_TOKEN_FILE`
+- `PROXY_API_KEY`
 - `OPENAI_PROXY_TIMEOUT`
 - `OPENAI_OAUTH_REFRESH_BUFFER_SECONDS`
 

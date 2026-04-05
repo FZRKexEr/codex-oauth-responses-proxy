@@ -19,6 +19,7 @@ type Config struct {
 	BetaHeader       string
 	BackendBase      string
 	TokenFile        string
+	ProxyAPIKey      string
 	RequestTimeout   time.Duration
 	RefreshBuffer    time.Duration
 	DebugRequestBody bool
@@ -36,6 +37,7 @@ func Load() Config {
 		BetaHeader:       env("OPENAI_OAUTH_BETA", "responses=experimental"),
 		BackendBase:      env("OPENAI_BACKEND_BASE", "https://chatgpt.com/backend-api"),
 		TokenFile:        env("OPENAI_OAUTH_TOKEN_FILE", ".oauth_tokens.json"),
+		ProxyAPIKey:      env("PROXY_API_KEY", ""),
 		RequestTimeout:   durationSeconds("OPENAI_PROXY_TIMEOUT", 180),
 		RefreshBuffer:    durationSeconds("OPENAI_OAUTH_REFRESH_BUFFER_SECONDS", 300),
 		DebugRequestBody: envBool("DEBUG_REQUEST_BODY", false),

@@ -31,9 +31,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("/auth/login", h.handleAuthLogin)
 	mux.HandleFunc("/auth/exchange", h.handleAuthExchange)
 	mux.HandleFunc("/auth/callback", h.handleAuthCallback)
-	mux.HandleFunc("/v1/models", h.handleModels)
-	mux.HandleFunc("/v1/chat/completions", h.handleChatCompletions)
-	mux.HandleFunc("/v1/responses", h.handleResponses)
+	mux.HandleFunc("/v1/models", h.requireAPIKey(h.handleModels))
+	mux.HandleFunc("/v1/chat/completions", h.requireAPIKey(h.handleChatCompletions))
+	mux.HandleFunc("/v1/responses", h.requireAPIKey(h.handleResponses))
 	return mux
 }
 
@@ -45,10 +45,38 @@ func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":            true,
-		"authenticated": tokens != nil,
-		"token_file":    h.cfg.TokenFile,
+		"ok":               true,
+		"authenticated":    tokens != nil,
+		"token_file":       h.cfg.TokenFile,
+		"api_key_required": strings.TrimSpace(h.cfg.ProxyAPIKey) != "",
 	})
+}
+
+func (h *Handler) requireAPIKey(next http.HandlerFunc) http.HandlerFunc {
+	if strings.TrimSpace(h.cfg.ProxyAPIKey) == "" {
+		return next
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !validBearerToken(r.Header.Get("Authorization"), h.cfg.ProxyAPIKey) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="codex-oauth-responses-proxy"`)
+			writeError(w, http.StatusUnauthorized, "invalid or missing api key")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func validBearerToken(headerValue, expected string) bool {
+	headerValue = strings.TrimSpace(headerValue)
+	expected = strings.TrimSpace(expected)
+	if headerValue == "" || expected == "" {
+		return false
+	}
+	const prefix = "Bearer "
+	if !strings.HasPrefix(headerValue, prefix) {
+		return false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(headerValue, prefix)) == expected
 }
 
 func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
