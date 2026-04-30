@@ -28,9 +28,8 @@ func NewHandler(cfg config.Config, store *store.TokenStore, authService *auth.Se
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
-	mux.HandleFunc("/auth/login", h.handleAuthLogin)
-	mux.HandleFunc("/auth/device/start", h.handleAuthLogin)
-	mux.HandleFunc("/auth/device/complete", h.handleAuthDeviceComplete)
+	mux.HandleFunc("/auth/login", h.requireAPIKey(h.handleAuthLogin))
+	mux.HandleFunc("/auth/login/complete", h.requireAPIKey(h.handleAuthLoginComplete))
 	mux.HandleFunc("/v1/models", h.requireAPIKey(h.handleModels))
 	mux.HandleFunc("/v1/chat/completions", h.requireAPIKey(h.handleChatCompletions))
 	mux.HandleFunc("/v1/responses", h.requireAPIKey(h.handleResponses))
@@ -108,11 +107,11 @@ func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		"user_code":        device.UserCode,
 		"interval":         device.Interval,
 		"expires_at":       device.ExpiresAt,
-		"message":          "Open verification_url in your browser, enter user_code, then call /auth/device/complete.",
+		"message":          "Open verification_url in your browser, enter user_code, then call /auth/login/complete.",
 	})
 }
 
-func (h *Handler) handleAuthDeviceComplete(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleAuthLoginComplete(w http.ResponseWriter, r *http.Request) {
 	log.Printf("http: %s %s", r.Method, r.URL.Path)
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

@@ -132,12 +132,14 @@ Authorization: Bearer your-secret-key
 - `/v1/responses`
 - `/v1/chat/completions`
 
-OAuth 登录相关接口仍然不需要这个 key：
+无需 `PROXY_API_KEY` 的接口：
 
 - `/health`
+
+OAuth 登录相关接口也需要这个 key，避免外部用户重新绑定账号：
+
 - `/auth/login`
-- `/auth/device/start`
-- `/auth/device/complete`
+- `/auth/login/complete`
 
 ## 服务器最小部署配置
 
@@ -165,7 +167,8 @@ export OPENAI_OAUTH_TOKEN_FILE="/opt/codex-oauth-responses-proxy/.oauth_tokens.j
 1. 获取设备码：
 
 ```bash
-curl -s http://127.0.0.1:1455/auth/login | jq .
+curl -s http://127.0.0.1:1455/auth/login \
+  -H 'authorization: Bearer your-secret-key' | jq .
 ```
 
 响应里会包含：
@@ -183,12 +186,11 @@ curl -s http://127.0.0.1:1455/auth/login | jq .
 3. 回到终端完成登录：
 
 ```bash
-curl -X POST http://127.0.0.1:1455/auth/device/complete | jq .
+curl -X POST http://127.0.0.1:1455/auth/login/complete \
+  -H 'authorization: Bearer your-secret-key' | jq .
 ```
 
 返回 `{"ok":true}` 即登录成功。远程服务器部署时流程一样，只需要把示例里的地址换成你的服务地址；浏览器不需要回调到代理所在机器。
-
-如果你更喜欢显式路径，`GET /auth/device/start` 和 `GET /auth/login` 等价。
 
 如果服务端返回 device-code 未启用，需要先在 ChatGPT 个人安全设置或工作区权限里开启 device-code 登录。
 
@@ -221,15 +223,11 @@ OPENAI_OAUTH_TOKEN_FILE=/absolute/path/to/.oauth_tokens.json ./bin/oauth-respons
 
 ### `GET /auth/login`
 
-发起 device-code 登录，返回 `verification_url`、`user_code`、轮询间隔和过期时间。
+发起 device-code 登录，返回 `verification_url`、`user_code`、轮询间隔和过期时间。设置 `PROXY_API_KEY` 时需要 Bearer 认证。
 
-### `GET /auth/device/start`
+### `POST /auth/login/complete`
 
-等价于 `GET /auth/login`。
-
-### `POST /auth/device/complete`
-
-轮询 device-code 登录结果，成功后交换并保存 OAuth tokens。
+轮询 device-code 登录结果，成功后交换并保存 OAuth tokens。设置 `PROXY_API_KEY` 时需要 Bearer 认证。
 
 ### `GET /v1/models`
 
