@@ -35,7 +35,7 @@ internal/
 ### Request flow for `/v1/responses`
 
 1. `httpapi.handleResponses` validates auth (optional API key) and parses JSON body.
-2. `proxy.BuildResponsesRequest` applies mandatory adaptations: forces `stream=true`, `store=false`, auto-fills empty `instructions`, strips `prompt_cache_retention` and `safety_identifier`.
+2. `proxy.BuildResponsesRequest` applies mandatory adaptations: forces `stream=true`, `store=false`, auto-fills empty `instructions`, strips `prompt_cache_retention`, `safety_identifier`, and `max_output_tokens`.
 3. If client requested streaming: SSE is piped through as-is. If non-streaming: proxy collects the full SSE stream, extracts the `response.done`/`response.completed` event, returns the final JSON.
 
 ### Request flow for `/v1/chat/completions`
@@ -48,7 +48,7 @@ internal/
 
 - Missing `instructions` → upstream 400; proxy auto-fills `""`.
 - `stream=false` → upstream rejects; proxy always sends `stream=true` and reassembles for non-stream callers.
-- `prompt_cache_retention`, `safety_identifier` → upstream rejects; proxy strips them.
+- `prompt_cache_retention`, `safety_identifier`, `max_output_tokens` → upstream rejects; proxy strips them.
 - Upstream 404 with usage-limit messages → proxy remaps to 429.
 
 ## Code Conventions

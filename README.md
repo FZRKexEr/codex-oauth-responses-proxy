@@ -37,6 +37,7 @@ GitHub 仓库：
 - `previous_response_id` 当前不支持
 - `prompt_cache_retention` 当前不支持
 - `safety_identifier` 当前不支持
+- `max_output_tokens` 当前不支持
 
 所以这个代理做的是“最小必要适配”：
 
@@ -45,6 +46,7 @@ GitHub 仓库：
 - 对非流式请求，内部转成上游流式，再把 SSE 收口成最终 JSON
 - 转发前过滤已确认不兼容的 `prompt_cache_retention`
 - 转发前过滤已确认不兼容的 `safety_identifier`
+- 转发前过滤已确认不兼容的 `max_output_tokens`
 - 对流式请求，原样 SSE passthrough
 
 除了这些已经被真实上游证明必要的适配，其他字段尽量透传。
@@ -494,6 +496,16 @@ Unsupported parameter: safety_identifier
 
 - 所以代理会在转发前移除这个字段
 
+6. `max_output_tokens`
+
+- 当前会返回：
+
+```text
+Unsupported parameter: max_output_tokens
+```
+
+- 所以代理会在转发前移除这个字段
+
 ## 当前边界
 
 - 主要面向单用户、本地代理场景
@@ -714,8 +726,9 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/responses \
 
 - `prompt_cache_retention`
 - `safety_identifier`
+- `max_output_tokens`
 
-而通过本项目转发时，这两个字段会被自动过滤，不需要调用方自己处理。
+而通过本项目转发时，这些字段会被自动过滤，不需要调用方自己处理。
 
 ### 10. Chat completions 兼容检查
 
