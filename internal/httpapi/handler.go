@@ -29,8 +29,8 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/auth/login", h.handleAuthLogin)
-	mux.HandleFunc("/auth/exchange", h.handleAuthExchange)
-	mux.HandleFunc("/auth/callback", h.handleAuthCallback)
+	mux.HandleFunc("/auth/device/start", h.handleAuthLogin)
+	mux.HandleFunc("/auth/device/complete", h.handleAuthDeviceComplete)
 	mux.HandleFunc("/v1/models", h.requireAPIKey(h.handleModels))
 	mux.HandleFunc("/v1/chat/completions", h.requireAPIKey(h.handleChatCompletions))
 	mux.HandleFunc("/v1/responses", h.requireAPIKey(h.handleResponses))
@@ -44,11 +44,17 @@ func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	pendingDevice, err := h.store.LoadPendingDevice()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":               true,
-		"authenticated":    tokens != nil,
-		"token_file":       h.cfg.TokenFile,
-		"api_key_required": strings.TrimSpace(h.cfg.ProxyAPIKey) != "",
+		"ok":                  true,
+		"authenticated":       tokens != nil,
+		"device_auth_pending": pendingDevice != nil,
+		"token_file":          h.cfg.TokenFile,
+		"api_key_required":    strings.TrimSpace(h.cfg.ProxyAPIKey) != "",
 	})
 }
 
@@ -81,108 +87,60 @@ func validBearerToken(headerValue, expected string) bool {
 
 func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	log.Printf("http: %s %s", r.Method, r.URL.Path)
-	authURL, pending, err := h.auth.NewLoginURL()
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	device, pending, err := h.auth.NewDeviceCode(r.Context())
 	if err != nil {
-		log.Printf("http: auth login failed: %v", err)
+		log.Printf("http: device auth start failed: %v", err)
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if err := h.store.SavePendingDevice(pending); err != nil {
+		log.Printf("http: failed to save pending device auth: %v", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := h.store.SavePending(pending); err != nil {
-		log.Printf("http: failed to save pending oauth state=%s: %v", pending.State, err)
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	log.Printf("http: auth login pending state=%s", pending.State)
+	log.Printf("http: device auth pending expires_at=%d", device.ExpiresAt)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"authorization_url": authURL,
-		"redirect_uri":      h.cfg.RedirectURI,
-		"message":           "Open authorization_url in your browser, then finish the callback or call /auth/exchange.",
+		"verification_url": device.VerificationURL,
+		"user_code":        device.UserCode,
+		"interval":         device.Interval,
+		"expires_at":       device.ExpiresAt,
+		"message":          "Open verification_url in your browser, enter user_code, then call /auth/device/complete.",
 	})
 }
 
-func (h *Handler) handleAuthExchange(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleAuthDeviceComplete(w http.ResponseWriter, r *http.Request) {
 	log.Printf("http: %s %s", r.Method, r.URL.Path)
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	var body map[string]string
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	pending, err := h.store.LoadPending()
+	pending, err := h.store.LoadPendingDevice()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if pending == nil {
-		writeError(w, http.StatusBadRequest, "no pending OAuth flow; start with /auth/login")
+		writeError(w, http.StatusBadRequest, "no pending device auth flow; start with /auth/login")
 		return
 	}
-	if body["state"] != "" && body["state"] != pending.State {
-		writeError(w, http.StatusBadRequest, "oauth state mismatch")
-		return
-	}
-	code := strings.TrimSpace(body["code"])
-	if code == "" {
-		writeError(w, http.StatusBadRequest, "missing authorization code")
-		return
-	}
-	tokens, err := h.auth.ExchangeCode(code, pending.Verifier)
+	tokens, err := h.auth.ExchangeDeviceCode(r.Context(), pending)
 	if err != nil {
-		log.Printf("http: auth exchange failed: %v", err)
+		log.Printf("http: device auth complete failed: %v", err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	if err := h.store.SaveTokens(tokens); err != nil {
-		log.Printf("http: failed to save exchanged tokens: %v", err)
+		log.Printf("http: failed to save device auth tokens: %v", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = h.store.ClearPending()
-	log.Printf("http: auth exchange completed account_id=%s", tokens.AccountID)
+	_ = h.store.ClearPendingDevice()
+	log.Printf("http: device auth completed account_id=%s", tokens.AccountID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "account_id": tokens.AccountID})
-}
-
-func (h *Handler) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
-	log.Printf("http: %s %s", r.Method, r.URL.Path)
-	pending, err := h.store.LoadPending()
-	if err != nil {
-		writeHTML(w, http.StatusInternalServerError, "<h1>Store error</h1>")
-		return
-	}
-	if pending == nil {
-		writeHTML(w, http.StatusBadRequest, "<h1>No pending OAuth flow</h1>")
-		return
-	}
-	if rawErr := r.URL.Query().Get("error"); rawErr != "" {
-		writeHTML(w, http.StatusBadRequest, "<h1>OAuth failed</h1><p>"+htmlEscape(rawErr)+"</p>")
-		return
-	}
-	if r.URL.Query().Get("state") != pending.State {
-		writeHTML(w, http.StatusBadRequest, "<h1>OAuth state mismatch</h1>")
-		return
-	}
-	code := strings.TrimSpace(r.URL.Query().Get("code"))
-	if code == "" {
-		writeHTML(w, http.StatusBadRequest, "<h1>Missing authorization code</h1>")
-		return
-	}
-	tokens, err := h.auth.ExchangeCode(code, pending.Verifier)
-	if err != nil {
-		log.Printf("http: auth callback exchange failed: %v", err)
-		writeHTML(w, http.StatusBadGateway, "<h1>Token exchange failed</h1><pre>"+htmlEscape(err.Error())+"</pre>")
-		return
-	}
-	if err := h.store.SaveTokens(tokens); err != nil {
-		log.Printf("http: auth callback failed to save tokens: %v", err)
-		writeHTML(w, http.StatusInternalServerError, "<h1>Failed to save tokens</h1>")
-		return
-	}
-	_ = h.store.ClearPending()
-	log.Printf("http: auth callback completed account_id=%s", tokens.AccountID)
-	writeHTML(w, http.StatusOK, "<h1>Authentication successful</h1><p>You can close this page.</p>")
 }
 
 func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -342,20 +300,9 @@ func writeRawError(w http.ResponseWriter, status int, body []byte) {
 	_, _ = w.Write(body)
 }
 
-func writeHTML(w http.ResponseWriter, status int, body string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(body))
-}
-
 func headerOrDefault(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback
 	}
 	return value
-}
-
-func htmlEscape(input string) string {
-	replacer := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
-	return replacer.Replace(input)
 }

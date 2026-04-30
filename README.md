@@ -62,7 +62,7 @@ GitHub 仓库：
 - 入口装配： [main.go](/Users/xinpeng/Desktop/Agent/OAuth/main.go)
 - 配置： [config.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/config/config.go)
 - token 持久化： [store.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/store/store.go)
-- OAuth 登录/刷新： [service.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/auth/service.go)
+- OAuth device-code 登录/刷新： [service.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/auth/service.go)
 - 上游请求适配： [service.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/proxy/service.go)
 - HTTP 接口： [handler.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/httpapi/handler.go)
 - chat completions 兼容层： [chat_completions.go](/Users/xinpeng/Desktop/Agent/OAuth/internal/httpapi/chat_completions.go)
@@ -136,8 +136,8 @@ OAuth 登录相关接口仍然不需要这个 key：
 
 - `/health`
 - `/auth/login`
-- `/auth/exchange`
-- `/auth/callback`
+- `/auth/device/start`
+- `/auth/device/complete`
 
 ## 服务器最小部署配置
 
@@ -156,40 +156,46 @@ export OPENAI_OAUTH_TOKEN_FILE="/opt/codex-oauth-responses-proxy/.oauth_tokens.j
 
 其他环境变量大多数都可以先使用默认值。
 
-第一次部署后，你仍然需要完成一次 OAuth 登录流程，生成 `.oauth_tokens.json`，之后代理才能代表你的 ChatGPT 账户访问上游。
+第一次部署后，你仍然需要完成一次 device-code 登录流程，生成 `.oauth_tokens.json`，之后代理才能代表你的 ChatGPT 账户访问上游。
 
 ## 登录
 
-### 方式一：浏览器登录
+项目只保留 device-code 登录，不再依赖 `localhost` 浏览器回调。
 
-1. 打开：
-
-```bash
-curl --noproxy '*' -s http://127.0.0.1:1455/auth/login | jq .
-```
-
-2. 复制响应里的 `authorization_url`
-3. 用浏览器打开并完成 ChatGPT 登录
-4. 浏览器会回跳到：
-
-```text
-http://localhost:1455/auth/callback
-```
-
-5. 页面显示 `Authentication successful`
-
-### 方式二：手动 exchange code
+1. 获取设备码：
 
 ```bash
-curl --noproxy '*' -X POST http://127.0.0.1:1455/auth/exchange \
-  -H 'content-type: application/json' \
-  -d '{"code":"YOUR_CODE","state":"OPTIONAL_STATE"}'
+curl -s http://127.0.0.1:1455/auth/login | jq .
 ```
+
+响应里会包含：
+
+```json
+{
+  "verification_url": "https://auth.openai.com/codex/device",
+  "user_code": "ABCD-1234",
+  "interval": 5,
+  "expires_at": 1770000000
+}
+```
+
+2. 用浏览器打开 `verification_url`，登录 ChatGPT，并输入 `user_code`
+3. 回到终端完成登录：
+
+```bash
+curl -X POST http://127.0.0.1:1455/auth/device/complete | jq .
+```
+
+返回 `{"ok":true}` 即登录成功。远程服务器部署时流程一样，只需要把示例里的地址换成你的服务地址；浏览器不需要回调到代理所在机器。
+
+如果你更喜欢显式路径，`GET /auth/device/start` 和 `GET /auth/login` 等价。
+
+如果服务端返回 device-code 未启用，需要先在 ChatGPT 个人安全设置或工作区权限里开启 device-code 登录。
 
 ### 检查登录状态
 
 ```bash
-curl --noproxy '*' -s http://127.0.0.1:1455/health | jq .
+curl -s http://127.0.0.1:1455/health | jq .
 ```
 
 预期：
@@ -197,13 +203,11 @@ curl --noproxy '*' -s http://127.0.0.1:1455/health | jq .
 - `"ok": true`
 - `"authenticated": true`
 
-默认情况下，`make run` 会把 token 保存在项目根目录：
+### Token 文件
 
-```text
-.oauth_tokens.json
-```
+默认情况下，`make run` 会把 token 保存在项目根目录的 `.oauth_tokens.json`。
 
-如果你手动运行二进制，建议也显式指定绝对路径：
+如果手动运行二进制，建议显式指定绝对路径：
 
 ```bash
 OPENAI_OAUTH_TOKEN_FILE=/absolute/path/to/.oauth_tokens.json ./bin/oauth-responses-proxy
@@ -217,15 +221,15 @@ OPENAI_OAUTH_TOKEN_FILE=/absolute/path/to/.oauth_tokens.json ./bin/oauth-respons
 
 ### `GET /auth/login`
 
-生成 OAuth 登录链接和 PKCE 挂起状态。
+发起 device-code 登录，返回 `verification_url`、`user_code`、轮询间隔和过期时间。
 
-### `POST /auth/exchange`
+### `GET /auth/device/start`
 
-手动用 `code` 完成 token 交换。
+等价于 `GET /auth/login`。
 
-### `GET /auth/callback`
+### `POST /auth/device/complete`
 
-OAuth 浏览器回调地址。
+轮询 device-code 登录结果，成功后交换并保存 OAuth tokens。
 
 ### `GET /v1/models`
 
@@ -759,10 +763,7 @@ curl --noproxy '*' -s http://127.0.0.1:1455/v1/chat/completions \
 
 - `LISTEN_ADDR`
 - `OPENAI_OAUTH_CLIENT_ID`
-- `OPENAI_OAUTH_AUTH_URL`
 - `OPENAI_OAUTH_TOKEN_URL`
-- `OPENAI_OAUTH_REDIRECT_URI`
-- `OPENAI_OAUTH_SCOPES`
 - `OPENAI_OAUTH_ORIGINATOR`
 - `OPENAI_OAUTH_BETA`
 - `OPENAI_BACKEND_BASE`

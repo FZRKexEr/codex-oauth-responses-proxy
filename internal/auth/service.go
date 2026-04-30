@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"log"
 	"net/http"
@@ -29,40 +27,6 @@ func NewService(cfg config.Config, httpClient *http.Client) *Service {
 	}
 }
 
-func (s *Service) NewLoginURL() (string, *store.PendingOAuth, error) {
-	verifier := oauth2.GenerateVerifier()
-	state, err := randomURLSafe(24)
-	if err != nil {
-		return "", nil, err
-	}
-	url := s.oauthConfig.AuthCodeURL(
-		state,
-		oauth2.AccessTypeOffline,
-		oauth2.S256ChallengeOption(verifier),
-		oauth2.SetAuthURLParam("codex_cli_simplified_flow", "true"),
-		oauth2.SetAuthURLParam("originator", s.cfg.Originator),
-	)
-	log.Printf("auth: generated login URL state=%s redirect_uri=%s", state, s.cfg.RedirectURI)
-	return url, &store.PendingOAuth{Verifier: verifier, State: state}, nil
-}
-
-func (s *Service) ExchangeCode(code, verifier string) (*store.Tokens, error) {
-	log.Printf("auth: exchanging authorization code")
-	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, s.httpClient)
-	token, err := s.oauthConfig.Exchange(ctx, code, oauth2.VerifierOption(verifier))
-	if err != nil {
-		log.Printf("auth: code exchange failed: %v", err)
-		return nil, err
-	}
-	tokens, err := tokensFromOAuthToken(token)
-	if err != nil {
-		log.Printf("auth: token parsing failed after code exchange: %v", err)
-		return nil, err
-	}
-	log.Printf("auth: code exchange succeeded account_id=%s expires_at=%d", tokens.AccountID, tokens.ExpiresAt)
-	return tokens, nil
-}
-
 func (s *Service) RefreshTokens(refreshToken string) (*store.Tokens, error) {
 	log.Printf("auth: refreshing access token")
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, s.httpClient)
@@ -79,6 +43,9 @@ func (s *Service) RefreshTokens(refreshToken string) (*store.Tokens, error) {
 		log.Printf("auth: token parsing failed after refresh: %v", err)
 		return nil, err
 	}
+	if tokens.RefreshToken == "" {
+		tokens.RefreshToken = refreshToken
+	}
 	log.Printf("auth: refresh succeeded account_id=%s expires_at=%d", tokens.AccountID, tokens.ExpiresAt)
 	return tokens, nil
 }
@@ -87,7 +54,11 @@ func tokensFromOAuthToken(token *oauth2.Token) (*store.Tokens, error) {
 	if token == nil {
 		return nil, errors.New("missing oauth token")
 	}
+	idToken, _ := token.Extra("id_token").(string)
 	accountID, err := extractAccountID(token.AccessToken)
+	if err != nil && idToken != "" {
+		accountID, err = extractAccountID(idToken)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -99,10 +70,17 @@ func tokensFromOAuthToken(token *oauth2.Token) (*store.Tokens, error) {
 			}
 		}
 	}
+	expiresAt := token.Expiry.Unix()
+	if token.Expiry.IsZero() {
+		expiresAt = extractExpiry(token.AccessToken)
+		if expiresAt == 0 && idToken != "" {
+			expiresAt = extractExpiry(idToken)
+		}
+	}
 	return &store.Tokens{
 		AccessToken:  token.AccessToken,
 		RefreshToken: refreshToken,
-		ExpiresAt:    token.Expiry.Unix(),
+		ExpiresAt:    expiresAt,
 		AccountID:    accountID,
 	}, nil
 }
@@ -128,10 +106,18 @@ func extractAccountID(accessToken string) (string, error) {
 	return "", errors.New("could not determine account ID from access token")
 }
 
-func randomURLSafe(size int) (string, error) {
-	buf := make([]byte, size)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
+func extractExpiry(token string) int64 {
+	parsed, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
+	if err != nil {
+		return 0
 	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return 0
+	}
+	exp, err := claims.GetExpirationTime()
+	if err != nil || exp == nil {
+		return 0
+	}
+	return exp.Time.Unix()
 }

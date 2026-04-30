@@ -11,10 +11,7 @@ import (
 type Config struct {
 	ListenAddr       string
 	ClientID         string
-	AuthURL          string
 	TokenURL         string
-	RedirectURI      string
-	Scopes           string
 	Originator       string
 	BetaHeader       string
 	BackendBase      string
@@ -29,10 +26,7 @@ func Load() Config {
 	return Config{
 		ListenAddr:       env("LISTEN_ADDR", "127.0.0.1:1455"),
 		ClientID:         env("OPENAI_OAUTH_CLIENT_ID", "app_EMoamEEZ73f0CkXaXp7hrann"),
-		AuthURL:          env("OPENAI_OAUTH_AUTH_URL", "https://auth.openai.com/oauth/authorize"),
 		TokenURL:         env("OPENAI_OAUTH_TOKEN_URL", "https://auth.openai.com/oauth/token"),
-		RedirectURI:      env("OPENAI_OAUTH_REDIRECT_URI", "http://localhost:1455/auth/callback"),
-		Scopes:           env("OPENAI_OAUTH_SCOPES", "openid profile email offline_access"),
 		Originator:       env("OPENAI_OAUTH_ORIGINATOR", "codex_cli_rs"),
 		BetaHeader:       env("OPENAI_OAUTH_BETA", "responses=experimental"),
 		BackendBase:      env("OPENAI_BACKEND_BASE", "https://chatgpt.com/backend-api"),
@@ -48,11 +42,8 @@ func (c Config) OAuthConfig() *oauth2.Config {
 	return &oauth2.Config{
 		ClientID: c.ClientID,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  c.AuthURL,
 			TokenURL: c.TokenURL,
 		},
-		RedirectURL: c.RedirectURI,
-		Scopes:      strings.Fields(c.Scopes),
 	}
 }
 

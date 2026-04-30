@@ -15,14 +15,17 @@ type Tokens struct {
 	AccountID    string `json:"account_id"`
 }
 
-type PendingOAuth struct {
-	Verifier string `json:"verifier"`
-	State    string `json:"state"`
+type PendingDeviceAuth struct {
+	DeviceAuthID    string `json:"device_auth_id"`
+	UserCode        string `json:"user_code"`
+	VerificationURL string `json:"verification_url"`
+	Interval        int64  `json:"interval"`
+	ExpiresAt       int64  `json:"expires_at"`
 }
 
 type fileData struct {
-	Tokens       *Tokens       `json:"tokens,omitempty"`
-	PendingOAuth *PendingOAuth `json:"pending_oauth,omitempty"`
+	Tokens            *Tokens            `json:"tokens,omitempty"`
+	PendingDeviceAuth *PendingDeviceAuth `json:"pending_device_auth,omitempty"`
 }
 
 type TokenStore struct {
@@ -66,35 +69,35 @@ func (s *TokenStore) ClearTokens() error {
 	return s.write(data)
 }
 
-func (s *TokenStore) LoadPending() (*PendingOAuth, error) {
+func (s *TokenStore) LoadPendingDevice() (*PendingDeviceAuth, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, err := s.read()
 	if err != nil {
 		return nil, err
 	}
-	return data.PendingOAuth, nil
+	return data.PendingDeviceAuth, nil
 }
 
-func (s *TokenStore) SavePending(pending *PendingOAuth) error {
+func (s *TokenStore) SavePendingDevice(pending *PendingDeviceAuth) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, err := s.read()
 	if err != nil {
 		return err
 	}
-	data.PendingOAuth = pending
+	data.PendingDeviceAuth = pending
 	return s.write(data)
 }
 
-func (s *TokenStore) ClearPending() error {
+func (s *TokenStore) ClearPendingDevice() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, err := s.read()
 	if err != nil {
 		return err
 	}
-	data.PendingOAuth = nil
+	data.PendingDeviceAuth = nil
 	return s.write(data)
 }
 
